@@ -1,5 +1,5 @@
 function [] = nn(plotErr,plotEnd,noFunc,waitBarSwitch,fmFilterSwitch,useToolbox)
-clear all;
+clear all; close all;
 
 %% Define switches
 plotErr = 1;
@@ -8,11 +8,12 @@ noFunc = 1;
 waitBarSwitch = 0;
 fmFilterSwitch = 1; 
 useToolbox = 0;
+noteIt = 300;
 
 
 %% Define parameters
 N = 9;      % population size
-T = 200;     % number of training steps
+T = 20000;     % number of training steps
 trS = 50;   % size of training set
 Ninp = 8;   % number of inputs
 Nhid = 10;  % number of hidden layer nodes
@@ -77,8 +78,9 @@ if useToolbox
 end
 
 if waitBarSwitch; hw = waitbar(0,''); end
-tic
+tstart = tic;
 for i=1:T
+    if mod(i,noteIt)==1; titer = tic; end
 % Select a training example
     si = randi([1 trS]);
     xi = rind(si);
@@ -241,13 +243,22 @@ end
         end
     end
     
-    if waitBarSwitch; waitbar(i/T,hw,''); end
+    
+    if waitBarSwitch; 
+        waitbar(i/T,hw,''); 
+    else
+        if mod(i,noteIt)==1
+            iterT = toc(titer);
+            fprintf('current iter: %0.0f time to finish: %0.2f mins at %0.5f sec per it\n',i,iterT*(T-i)/60,iterT);
+        end
+    end
 end
-time=toc;
+time=toc(tstart);
 
 if plotEnd
     plot(gca,1:T,E1','k.','MarkerSize',10);
     plot(gca,1:T,E2','r.','MarkerSize',10);
+    save(['nnErr' datestr(now,'yyyymmddHHMMSS')],'E1','E2');
 end
 
 if waitBarSwitch
