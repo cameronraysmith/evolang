@@ -1,20 +1,38 @@
-function [] = nn(plotErr,plotEnd,noFunc,waitBarSwitch,fmFilterSwitch,useToolbox)
+function [] = nn(ps,noteIt,plotErr,plotEnd,ergodicErr,noFunc,waitBarSwitch,fmFilterSwitch,useToolbox)
 clear all; close all;
 
+%-------------------------------------
+% requires MatlabBGL
+% http://dgleich.github.com/matlab-bgl/
+% Run
+% >>help Contents 
+% to view methods defined in MatlabBGL
+%
+% requires Waterloo file and matrix utilities
+% Direct download: http://goo.gl/NjSKE
+% http://sigtool.sourceforge.net/
+% http://www.mathworks.com/matlabcentral/fileexchange/12250
+% uses: nmatrix
+%-------------------------------------
+
 %% Define switches
-plotErr = 1;
-plotEnd = 1;
-noFunc = 1;
-waitBarSwitch = 0;
+ps = 'mixing'; % test | mixing | grid | rand
+
+noteIt     = 1000;
+plotErr    = 1;
+plotEnd    = 1;
+ergodicErr = 1;
+partialIO  = 0;
+noFunc     = 1;
+
+waitBarSwitch  = 0;
 fmFilterSwitch = 1; 
-useToolbox = 0;
-noteIt = 1000;
-ergodicErr=1;
+useToolbox     = 0;
 
 
 %% Define parameters
-N = 100;      % population size
-T = 1e6;     % number of training steps
+N = 100;      % population size, must be perfect square
+T = 2000;     % number of training steps
 trS = 50;   % size of training set
 Ninp = 8;   % number of inputs
 Nhid = 10;  % number of hidden layer nodes
@@ -24,6 +42,9 @@ WR = [-0.5 0.5]; % range of nn weights;
 delta = 0.05;
 epsil = 0.01;
 
+datFname = ['nnErr' datestr(now,'yyyymmddHHMMSS') '.mat'];
+writeIter = 1000;
+
 %% Initialize variables
 if ergodicErr
     E1t = zeros(2^Ninp-1,1);
@@ -31,8 +52,16 @@ else
     E1t = zeros(N,2^Ninp-1);
 end
 E2t = zeros(2^Ninp-1,1);
-E1 = zeros(T,1);
-E2 = zeros(T,1);
+
+
+if partialIO
+    %save(datFname,'E','-v6');clear E;
+    %E = nmatrix(datFname,'/E');
+    E = zeros(writeIter,2);
+    datH=MATOpen(datFname,'a') ;
+else
+    E = zeros(T,2);
+end
 
 %% Generate training data
 
@@ -75,18 +104,47 @@ end
 if waitBarSwitch; hw = waitbar(0,''); end
 tstart = tic;
 
+% initialize population structure graph
+% s1 sender r1 receiver
+if strcmp(ps,'test')
+    s1=1; r1=2;
+elseif strcmp(ps,'mixing')
+%    rp=randperm(N); s1=rp(1); r1=rp(2);
+elseif strcmp(ps,'grid')
+    [G xy]=grid_graph(sqrt(N),sqrt(N));
+%    [Gi Gj Gw]=find(G);
+elseif strcmp(ps,'rand')
+    p = 1/3;
+    G=erdos_reyni(N,p);
+%    [Gi Gj Gw]=find(G);
+end
+
 %% Main loop (time)
 for i=1:T
     if mod(i,noteIt)==1; titer = tic; end
 
 % Select indices for training given a population structure
-ps = 'mixing';
-if strcmp(ps,'mixing')
-    rp=randperm(N); i1=rp(1); j1=rp(2);
-elseif strcmp(ps,'simple')
-    i1=1; j1=2;
-elseif strcmp(ps,'graph')
-    i1=1; j1=2;
+
+if strcmp(ps,'test')
+    % s1 sender r1 receiver
+    s1=1; r1=2;
+elseif strcmp(ps,'mixing')
+    rp=randperm(N); s1=rp(1); r1=rp(2);
+elseif strcmp(ps,'grid')
+%    [G xy]=grid_graph(sqrt(N),sqrt(N));
+    [Gi Gj Gw]=find(G);
+    rp=randperm(num_edges(G));
+    s1=Gi(rp(1)); r1=Gj(rp(1));
+    rp(3) = randsample(N,1);  % index to random individual for sender error computation
+    rp(4) = randsample(Gi(Gj==r1),1); % index to random individual with arrow directed to r1 to serve as a sender in error computation
+elseif strcmp(ps,'rand')
+%     p = 1/3;
+%     [G xy]=erdos_reyni(N,p);
+    [Gi Gj Gw]=find(G);
+    rp=randperm(num_edges(G));
+    s1=Gi(rp(1)); r1=Gj(rp(1));
+    rp(3) = randsample(N,1);  % random individual for sender error computation
+    rp(4) = randsample(Gi(Gj==r1),1); % random individual with arrow directed to r1 to serve as a sender in error computation
 end
     
 % Select a training example
@@ -95,21 +153,21 @@ end
       
 % Decompose the receiver into parts representing hl and ol
 if useToolbox
-    ol.IW{1} = net{j1}.LW{2,1};
-    ol.b{1} = net{j1}.b{2};
+    ol.IW{1} = net{r1}.LW{2,1};
+    ol.b{1} = net{r1}.b{2};
     
-    hl.IW{1} = net{j1}.IW{1};
-    hl.b{1} = net{j1}.b{1};    
+    hl.IW{1} = net{r1}.IW{1};
+    hl.b{1} = net{r1}.b{1};    
 else
-    Shl = netH(:,:,i1);
-    Sol = netO(:,:,i1);
-    Rhl = netH(:,:,j1);
-    Rol = netO(:,:,j1);
+    Shl = netH(:,:,s1);
+    Sol = netO(:,:,s1);
+    Rhl = netH(:,:,r1);
+    Rol = netO(:,:,r1);
 end
 
 % Compute sender's hidden layer activation levels
 if useToolbox
-    hact = +(logistic(net{i1}.IW{1}*x(:,xi)+net{i1}.b{1},0.1)>0.5); % sender hidden layer activation levels
+    hact = +(logistic(net{s1}.IW{1}*x(:,xi)+net{s1}.b{1},0.1)>0.5); % sender hidden layer activation levels
 else
     if noFunc
         hact = +((1./(1+exp(-Shl*x(:,xi))))>0.5);
@@ -121,7 +179,7 @@ end
 % Update sender's form-meaning mapping and encode message with it
     if fmFilterSwitch
         fmInd = find(hact==1);
-        fmMat = fm(:,:,i1);
+        fmMat = fm(:,:,s1);
         
         for j=1:length(fmInd)
             maxInd = find( fmMat(:,fmInd(j)) == max(fmMat(:,fmInd(j))), 1 );
@@ -130,12 +188,12 @@ end
             fmMat(maxInd,:) = fmMat(maxInd,:) - epsil;
         end
         
-        fm(:,:,i1) = fmMat;
+        fm(:,:,s1) = fmMat;
         Stxfr = fmMat>0;
         menc = Stxfr*hact;
                 
 % Decode sender's message with receiver's form-meaning mapping
-        RfmMat = fm(:,:,j1);
+        RfmMat = fm(:,:,r1);
         Rtxfr = RfmMat>0;
         mdec = Rtxfr'*menc;
         mdec(mdec==1)=0.9; 
@@ -162,7 +220,7 @@ end
 % Update receiver's form-meaning mapping
 if fmFilterSwitch
     fmInd = find(z==1);
-        fmMat = fm(:,:,j1);
+        fmMat = fm(:,:,r1);
         
         for j=1:length(fmInd)
             maxInd = find( fmMat(:,fmInd(j)) == max(fmMat(:,fmInd(j))), 1 );
@@ -170,7 +228,7 @@ if fmFilterSwitch
             fmMat(:,fmInd(j)) = fmMat(:,fmInd(j)) - epsil;
             fmMat(maxInd,:) = fmMat(maxInd,:) - epsil;
         end
-    fm(:,:,j1) = fmMat;
+    fm(:,:,r1) = fmMat;
 end
 
 % Update/train the decomposed receiver and sender
@@ -178,13 +236,13 @@ if useToolbox
     % Train receiver
     [hl,Yhl,Ehl,Pfhl] = adapt(hl,x(:,xi),ht);
     [ol,Yol,Eol,Pfol] = adapt(ol,hact,t(xi));
-    net{j1}.LW{2,1} = ol.IW{1};
-    net{j1}.b{2} = ol.b{1};
-    net{j1}.IW{1} = hl.IW{1};
-    net{j1}.b{1} = hl.b{1};
+    net{r1}.LW{2,1} = ol.IW{1};
+    net{r1}.b{2} = ol.b{1};
+    net{r1}.IW{1} = hl.IW{1};
+    net{r1}.b{1} = hl.b{1};
 
     % Train the sender
-    net{i1} = adapt(net{i1},x(:,xi),t(xi));
+    net{s1} = adapt(net{s1},x(:,xi),t(xi));
 else        
     % Train the sender
     if noFunc
@@ -211,10 +269,10 @@ else
     Rhl = Rhl + dRhl*x(:,xi)';
     
     % Put updated weights back into population
-    netH(:,:,i1) = Shl;
-    netO(:,:,i1) = Sol;
-    netH(:,:,j1) = Rhl;
-    netO(:,:,j1) = Rol;
+    netH(:,:,s1) = Shl;
+    netO(:,:,s1) = Sol;
+    netH(:,:,r1) = Rhl;
+    netO(:,:,r1) = Rol;
 end
 
 % Compute data for plotting
@@ -223,8 +281,8 @@ end
                 for j=1:N
                     E1t(j) = mean((t-net{j}(x)).^2);
                 end
-                E1 = mean(E1t);
-                E2 = mean((t-net{j1}(x)).^2);
+                E(:,1) = mean(E1t);
+                E(:,2) = mean((t-net{r1}(x)).^2);
             else
                 if ergodicErr
                     for j=rp(3)
@@ -236,7 +294,7 @@ end
                             end
                         end
                     end
-                    E1(i,1) = mean([mean(E1t); E1(max([i-100 1]):max([i-1 1]),1)]);
+                    E(i,1) = mean([mean(E1t); E(max([i-100 1]):max([i-1 1]),1)]);
                 else
                     for j=1:N
                         for k=1:(2^Ninp-1)
@@ -247,12 +305,12 @@ end
                             end
                         end
                     end
-                    E1(i,1) = mean(mean(E1t));
+                    E(i,1) = mean(mean(E1t));
                 end
                 
                 fmMat = fm(:,:,rp(4));
                 Stxfr = fmMat>0;
-                RfmMat = fm(:,:,j1);
+                RfmMat = fm(:,:,r1);
                 Rtxfr = RfmMat>0;
                 for k=1:(2^Ninp-1)
                     if noFunc
@@ -268,11 +326,11 @@ end
                         E2t(k,1) = (t(k) - (logistic(Rol*logistic(Rhl*x(:,k)))>0.5)).^2;
                     end
                 end
-                E2(i,1) = mean([mean(E2t); E1(max([i-100 1]):max([i-1 1]))]);
+                E(i,2) = mean([mean(E2t); E(max([i-100 1]):max([i-1 1]),2)]);
             end
         if ~plotEnd
-            plot(gca,i,E1(i),'k.','MarkerSize',10);
-            plot(gca,i,E2(i),'r.','MarkerSize',10);
+            plot(gca,i,E(i,1),'k.','MarkerSize',10);
+            plot(gca,i,E(i,2),'r.','MarkerSize',10);
         end
     end
     
@@ -289,9 +347,11 @@ end
 time=toc(tstart);
 
 if plotEnd
-    plot(gca,1:T,E1','k.','MarkerSize',10);
-    plot(gca,1:T,E2','r.','MarkerSize',10);
-    save(['nnErr' datestr(now,'yyyymmddHHMMSS')],'E1','E2');
+    plot(gca,1:T,E(:,1)','k.','MarkerSize',10);
+    plot(gca,1:T,E(:,2)','r.','MarkerSize',10);
+    if ~partialIO
+        save(datFname,'E');
+    end
 end
 
 if waitBarSwitch
