@@ -8,12 +8,13 @@ noFunc = 1;
 waitBarSwitch = 0;
 fmFilterSwitch = 1; 
 useToolbox = 0;
-noteIt = 300;
+noteIt = 1000;
+ergodicErr=1;
 
 
 %% Define parameters
-N = 9;      % population size
-T = 20000;     % number of training steps
+N = 100;      % population size
+T = 1e6;     % number of training steps
 trS = 50;   % size of training set
 Ninp = 8;   % number of inputs
 Nhid = 10;  % number of hidden layer nodes
@@ -24,7 +25,11 @@ delta = 0.05;
 epsil = 0.01;
 
 %% Initialize variables
-E1t = zeros(N,2^Ninp-1);
+if ergodicErr
+    E1t = zeros(2^Ninp-1,1);
+else
+    E1t = zeros(N,2^Ninp-1);
+end
 E2t = zeros(2^Ninp-1,1);
 E1 = zeros(T,1);
 E2 = zeros(T,1);
@@ -49,16 +54,6 @@ else
     netO = WR(1) + diff(WR).*rand(1,Nhid,N);
 end
 
-%% Select indices for training given a population structure
-ps = 'mixing';
-if strcmp(ps,'mixing')
-    rp=randperm(N); i1=rp(1); j1=rp(2);
-elseif strcmp(ps,'simple')
-    i1=1; j1=2;
-elseif strcmp(ps,'graph')
-    i1=1; j1=2;
-end
-
 %% Initialize form-meaning matrices
 fm = zeros(Nhid,Nhid,N);
 
@@ -79,8 +74,21 @@ end
 
 if waitBarSwitch; hw = waitbar(0,''); end
 tstart = tic;
+
+%% Main loop (time)
 for i=1:T
     if mod(i,noteIt)==1; titer = tic; end
+
+% Select indices for training given a population structure
+ps = 'mixing';
+if strcmp(ps,'mixing')
+    rp=randperm(N); i1=rp(1); j1=rp(2);
+elseif strcmp(ps,'simple')
+    i1=1; j1=2;
+elseif strcmp(ps,'graph')
+    i1=1; j1=2;
+end
+    
 % Select a training example
     si = randi([1 trS]);
     xi = rind(si);
@@ -125,7 +133,7 @@ end
         fm(:,:,i1) = fmMat;
         Stxfr = fmMat>0;
         menc = Stxfr*hact;
-        
+                
 % Decode sender's message with receiver's form-meaning mapping
         RfmMat = fm(:,:,j1);
         Rtxfr = RfmMat>0;
@@ -218,24 +226,49 @@ end
                 E1 = mean(E1t);
                 E2 = mean((t-net{j1}(x)).^2);
             else
-                for j=1:N
-                    for k=1:(2^Ninp-1)
-                        if noFunc
-                            E1t(j,k) = (t(k) - ((1./(1+exp(-netO(:,:,j)*(1./(1+exp(-netH(:,:,j)*x(:,k)))))))>0.5)).^2;
-                        else
-                            E1t(j,k) = (t(k) - (logistic(netO(:,:,j)*logistic(netH(:,:,j)*x(:,k)))>0.5)).^2;
+                if ergodicErr
+                    for j=rp(3)
+                        for k=1:(2^Ninp-1)
+                            if noFunc
+                                E1t(k,1) = (t(k) - ((1./(1+exp(-netO(:,:,j)*(1./(1+exp(-netH(:,:,j)*x(:,k)))))))>0.5)).^2;
+                            else
+                                E1t(k,1) = (t(k) - (logistic(netO(:,:,j)*logistic(netH(:,:,j)*x(:,k)))>0.5)).^2;
+                            end
                         end
                     end
+                    E1(i,1) = mean([mean(E1t); E1(max([i-100 1]):max([i-1 1]),1)]);
+                else
+                    for j=1:N
+                        for k=1:(2^Ninp-1)
+                            if noFunc
+                                E1t(j,k) = (t(k) - ((1./(1+exp(-netO(:,:,j)*(1./(1+exp(-netH(:,:,j)*x(:,k)))))))>0.5)).^2;
+                            else
+                                E1t(j,k) = (t(k) - (logistic(netO(:,:,j)*logistic(netH(:,:,j)*x(:,k)))>0.5)).^2;
+                            end
+                        end
+                    end
+                    E1(i,1) = mean(mean(E1t));
                 end
-                E1(i,1) = mean(mean(E1t));
+                
+                fmMat = fm(:,:,rp(4));
+                Stxfr = fmMat>0;
+                RfmMat = fm(:,:,j1);
+                Rtxfr = RfmMat>0;
                 for k=1:(2^Ninp-1)
                     if noFunc
-                        E2t(k,1) = (t(k) - ((1./(1+exp(-Rol*(1./(1+exp(-Rhl*x(:,k)))))))>0.5)).^2;
+                        %E2t(k,1) = (t(k) - ((1./(1+exp(-Rol*(1./(1+exp(-Rhl*x(:,k)))))))>0.5)).^2;
+                        hact=(1./(1+exp(-netH(:,:,rp(4))*x(:,k))));
+                        menc = Stxfr*hact;
+                        mdec = Rtxfr'*menc;
+                        mdec(mdec==1)=0.9;
+                        mdec(mdec==0)=0.1;
+                        hact = mdec;                        
+                        E2t(k,1) = (t(k) - ((1./(1+exp(-Rol*hact)))>0.5)).^2;
                     else
                         E2t(k,1) = (t(k) - (logistic(Rol*logistic(Rhl*x(:,k)))>0.5)).^2;
                     end
                 end
-                E2(i,1) = mean(E2t);
+                E2(i,1) = mean([mean(E2t); E1(max([i-100 1]):max([i-1 1]))]);
             end
         if ~plotEnd
             plot(gca,i,E1(i),'k.','MarkerSize',10);
