@@ -24,6 +24,7 @@ plotEnd    = 1;
 ergodicErr = 1;
 partialIO  = 0;
 noFunc     = 1;
+popTopEvo  = 1;
 
 waitBarSwitch  = 0;
 fmFilterSwitch = 1; 
@@ -32,7 +33,7 @@ useToolbox     = 0;
 
 %% Define parameters
 N = 100;      % population size, must be perfect square
-T = 2000;     % number of training steps
+T = 200000;     % number of training steps
 trS = 50;   % size of training set
 Ninp = 8;   % number of inputs
 Nhid = 10;  % number of hidden layer nodes
@@ -46,6 +47,8 @@ datFname = ['nnErr' datestr(now,'yyyymmddHHMMSS') '.mat'];
 writeIter = 1000;
 
 %% Initialize variables
+
+% error
 if ergodicErr
     E1t = zeros(2^Ninp-1,1);
 else
@@ -62,6 +65,10 @@ if partialIO
 else
     E = zeros(T,2);
 end
+
+% fitness
+fitVal = zeros(N,1);
+
 
 %% Generate training data
 
@@ -308,6 +315,8 @@ end
                     E(i,1) = mean(mean(E1t));
                 end
                 
+                fitVal(s1,1) = mean(E1t);
+                
                 fmMat = fm(:,:,rp(4));
                 Stxfr = fmMat>0;
                 RfmMat = fm(:,:,r1);
@@ -334,6 +343,16 @@ end
         end
     end
     
+    if exist('G','var')
+        if popTopEvo
+            s1Neigh = Gj(Gi==s1);
+            s1Rec = s1Neigh(find(fitVal(s1Neigh)...
+                            ==max(fitVal(s1Neigh))));
+            r1Neigh = randsample(Gi(Gj==r1),1);
+            G(r1Neigh,r1) = 0;
+            G(s1Rec,r1) = 1;           
+        end
+    end
     
     if waitBarSwitch; 
         waitbar(i/T,hw,''); 
