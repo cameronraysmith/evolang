@@ -32,16 +32,17 @@ useToolbox     = 0;
 
 
 %% Define parameters
-N = 100;      % population size, must be perfect square
-T = 200000;     % number of training steps
-trS = 50;   % size of training set
-Ninp = 8;   % number of inputs
-Nhid = 10;  % number of hidden layer nodes
-Nout = 1;   % number of output nodes
-Nch = 3;    % number of consecutive 1's in the K-in-N game
-WR = [-0.5 0.5]; % range of nn weights;
-delta = 0.05;
-epsil = 0.01;
+N = 100;            % population size, must be perfect square
+T = 2000;         % number of training steps
+trS = 50;           % size of training set
+Ninp = 8;           % number of inputs
+Nhid = 10;          % number of hidden layer nodes
+Nout = 1;           % number of output nodes
+Nch = 3;            % number of consecutive 1's in the K-in-N game
+WR = [0 1];    % range of nn weights; the neural.m file uses [0 1] and paper uses [-.5 .5]
+delta = 0.05;       % negative increment for form-meaning mapping
+epsil = 0.01;       % positive increment for form-meaning mapping
+LR = 2.6;           % learning rate
 
 datFname = ['nnErr' datestr(now,'yyyymmddHHMMSS') '.mat'];
 writeIter = 1000;
@@ -209,8 +210,8 @@ end
     end
     
 % Use sender's hidden layer activation levels on receiver's hidden layer
-% and perform back propagation on this basis to compute expected activation
-% levels
+% and perform back propagation on this basis to compute expected hidden
+% layer activation levels
 if useToolbox
     d = t(xi) - sim(ol,hact); % error
     ht = hact + d*(ol.IW{1}'+ol.b{1}); % training set for hidden layer
@@ -220,7 +221,7 @@ else
     else
         d = (t(xi) - logistic(Rol*hact));
     end
-    ht = hact + d*Rol';
+    ht = hact + LR*d*Rol';
     z = ht>0;   
 end
 
@@ -259,21 +260,23 @@ else
         H = logistic(Shl*x(:,xi));
         O = logistic(Sol*H);
     end
-    dSol = (t(xi) - O);
-    dShl = Sol'*dSol;
-    Sol = Sol + dSol*H';
-    Shl = Shl + dShl*x(:,xi)';
+    dSol = O.*(1-O).*(t(xi) - O); % should O.*(1-O) be used when weights aren't 0-1?
+    dShl = H.*(1-H).*Sol'*dSol; % should H.*(1-H) be used when weights aren't 0-1?
+    Sol = Sol + LR*dSol*H';
+    Shl = Shl + LR*dShl*x(:,xi)';
     
     % Train the receiver
+    H = 1./(1+exp(-Rhl*x(:,xi)));
+    O = 1./(1+exp(-Rol*hact));    
     if noFunc
-        dRol = (t(xi) - 1./(1+exp(-Rol*hact))); % computed above as d    
-        dRhl = (z - 1./(1+exp(-Rhl*x(:,xi))));    
+        dRol = O.*(1-O).*(t(xi) - O); % computed above as d    
+        dRhl = H.*(1-H).*(Rol'*dRol); % not sure if this is intended (z - H);
     else
         dRol = (t(xi) - logistic(Rol*hact)); % computed above as d    
         dRhl = (z - logistic(Rhl*x(:,xi)));    
     end
-    Rol = Rol + dRol*hact'; 
-    Rhl = Rhl + dRhl*x(:,xi)';
+    Rol = Rol + LR*dRol*hact'; 
+    Rhl = Rhl + LR*dRhl*x(:,xi)';
     
     % Put updated weights back into population
     netH(:,:,s1) = Shl;
