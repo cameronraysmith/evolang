@@ -16,7 +16,7 @@ clear all; close all;
 %-------------------------------------
 
 %% Define switches
-ps = 'mixing'; % test | mixing | grid | rand
+ps = 'grid'; % test | mixing | grid | rand
 
 noteIt     = 1000;
 plotErr    = 1;
@@ -25,6 +25,7 @@ ergodicErr = 1;
 partialIO  = 0;
 noFunc     = 1;
 popTopEvo  = 1;
+plotGph    = 0;
 
 waitBarSwitch  = 0;
 fmFilterSwitch = 1; 
@@ -32,8 +33,8 @@ useToolbox     = 0;
 
 
 %% Define parameters
-N = 100;            % population size, must be perfect square
-T = 2000;         % number of training steps
+N = 1225;            % population size, must be perfect square
+T = 1000000;         % number of training steps
 trS = 50;           % size of training set
 Ninp = 8;           % number of inputs
 Nhid = 10;          % number of hidden layer nodes
@@ -43,8 +44,11 @@ WR = [0 1];    % range of nn weights; the neural.m file uses [0 1] and paper use
 delta = 0.05;       % negative increment for form-meaning mapping
 epsil = 0.01;       % positive increment for form-meaning mapping
 LR = 2.6;           % learning rate
+ergErrWindow = 50;  % error window for moving average
+pRandAttach = 0.1;
 
-datFname = ['nnErr' datestr(now,'yyyymmddHHMMSS') '.mat'];
+datFname = datestr(now,'yyyymmddHHMMSS');
+system(['mkdir ' datFname]);
 writeIter = 1000;
 
 %% Initialize variables
@@ -62,7 +66,7 @@ if partialIO
     %save(datFname,'E','-v6');clear E;
     %E = nmatrix(datFname,'/E');
     E = zeros(writeIter,2);
-    datH=MATOpen(datFname,'a') ;
+    datH=MATOpen(['nnErr' datFname],'a') ;
 else
     E = zeros(T,2);
 end
@@ -142,17 +146,17 @@ elseif strcmp(ps,'grid')
 %    [G xy]=grid_graph(sqrt(N),sqrt(N));
     [Gi Gj Gw]=find(G);
     rp=randperm(num_edges(G));
-    s1=Gi(rp(1)); r1=Gj(rp(1));
+    r1=Gi(rp(1)); s1=Gj(rp(1)); % receiver has out-edge directed at sender
     rp(3) = randsample(N,1);  % index to random individual for sender error computation
-    rp(4) = randsample(Gi(Gj==r1),1); % index to random individual with arrow directed to r1 to serve as a sender in error computation
+    rp(4) = randsample(Gj(Gi==r1),1); % index to random individual with arrow directed to r1 to serve as a sender in error computation
 elseif strcmp(ps,'rand')
 %     p = 1/3;
 %     [G xy]=erdos_reyni(N,p);
     [Gi Gj Gw]=find(G);
     rp=randperm(num_edges(G));
-    s1=Gi(rp(1)); r1=Gj(rp(1));
+    r1=Gi(rp(1)); s1=Gj(rp(1));% receiver has out-edge directed at sender
     rp(3) = randsample(N,1);  % random individual for sender error computation
-    rp(4) = randsample(Gi(Gj==r1),1); % random individual with arrow directed to r1 to serve as a sender in error computation
+    rp(4) = randsample(Gj(Gi==r1),1); % random individual with arrow directed to r1 to serve as a sender in error computation
 end
     
 % Select a training example
@@ -304,7 +308,7 @@ end
                             end
                         end
                     end
-                    E(i,1) = mean([mean(E1t); E(max([i-100 1]):max([i-1 1]),1)]);
+                    E(i,1) = mean([mean(E1t); E(max([i-ergErrWindow 1]):max([i-1 1]),1)]);
                 else
                     for j=1:N
                         for k=1:(2^Ninp-1)
@@ -338,7 +342,7 @@ end
                         E2t(k,1) = (t(k) - (logistic(Rol*logistic(Rhl*x(:,k)))>0.5)).^2;
                     end
                 end
-                E(i,2) = mean([mean(E2t); E(max([i-100 1]):max([i-1 1]),2)]);
+                E(i,2) = mean([mean(E2t); E(max([i-ergErrWindow 1]):max([i-1 1]),2)]);
             end
         if ~plotEnd
             plot(gca,i,E(i,1),'k.','MarkerSize',10);
@@ -348,47 +352,79 @@ end
     
     if exist('G','var')
         if popTopEvo
-            s1Neigh = Gj(Gi==s1);
-            s1Rec = s1Neigh(find(fitVal(s1Neigh)...
-                            ==max(fitVal(s1Neigh))));
-            r1Neigh = randsample(Gi(Gj==r1),1);
-            G(r1Neigh,r1) = 0;
-            G(s1Rec,r1) = 1;           
+            if binornd(1,pRandAttach)
+                s1Rec = randsample(N,1);
+            else
+                if length(Gj(Gi==s1))>0
+                    s1Neigh = Gj(Gi==s1);
+                    s1Neigh = s1Neigh(s1Neigh~=s1);
+                    s1Rec = s1Neigh(find(fitVal(s1Neigh)...
+                        ==max(fitVal(s1Neigh))));
+                    if length(s1Rec)>1
+                        s1Rec = randsample(s1Rec,1);
+                    elseif length(s1Rec)==0
+                        s1Rec = s1;
+                    end
+                else
+                    s1Rec = s1;
+                end
+            end
+                if length(Gj(Gi==r1))>0
+                    r1Neigh = randsample(Gj(Gi==r1),1);
+                else
+                    r1Neigh = s1;
+                end
+            
+                G(r1,r1Neigh) = 0;
+                G(r1,s1Rec) = 1;
+            end
+        end
+        
+        if waitBarSwitch;
+            waitbar(i/T,hw,'');
+        else
+            if mod(i,noteIt)==1
+                iterT = toc(titer);
+                fprintf('current iter: %0.0f time to finish: %0.2f mins at %0.5f sec per it\n',i,iterT*(T-i)/60,iterT);
+            end
+        end
+    end
+    time=toc(tstart);
+    
+    if plotEnd
+        plot(gca,1:T,E(:,1)','k.','MarkerSize',10);
+        plot(gca,1:T,E(:,2)','r.','MarkerSize',10);
+        if ~partialIO
+            save([datFname '/nnErr' ],'E','G');
+        end
+        [Gi Gj Gw]=find(G);
+        Gout = [Gi Gj];
+        fid = fopen([datFname '/gephi.csv'],'w');
+        %fprintf( fid,'Source, \t Target,\n' );
+        %fprintf( fid,'%d, \t %d, \t %f,\n', Gout );
+        fprintf( fid,'%d,\t%d,\n', Gout );
+        fclose(fid);
+        fid = fopen([datFname '/fitVal.csv'],'w');
+        fprintf( fid,'%f,\n', fitVal );
+        fclose(fid);
+        if plotGph
+            gVizPlot(G,1,datFname);
         end
     end
     
-    if waitBarSwitch; 
-        waitbar(i/T,hw,''); 
+    if waitBarSwitch
+        waitbar(1,hw,...
+            sprintf('Finished in %0.2f seconds at %0.5f per iteration',time,time/T));
     else
-        if mod(i,noteIt)==1
-            iterT = toc(titer);
-            fprintf('current iter: %0.0f time to finish: %0.2f mins at %0.5f sec per it\n',i,iterT*(T-i)/60,iterT);
-        end
+        fprintf('Finished in %0.2f seconds at %0.5f per iteration\n',time,time/T);
     end
-end
-time=toc(tstart);
-
-if plotEnd
-    plot(gca,1:T,E(:,1)','k.','MarkerSize',10);
-    plot(gca,1:T,E(:,2)','r.','MarkerSize',10);
-    if ~partialIO
-        save(datFname,'E');
+    
+    if plotErr || plotEnd
+        %legend('sender','receiver');
+        hold off
     end
 end
 
-if waitBarSwitch
-    waitbar(1,hw,...
-    sprintf('Finished in %0.2f seconds at %0.5f per iteration',time,time/T));
-else
-    fprintf('Finished in %0.2f seconds at %0.5f per iteration\n',time,time/T);
-end
-
-if plotErr || plotEnd
-    %legend('sender','receiver');
-    hold off
-end
-end
-
-function x = logistic(x)
-x = (1+exp(-x)).^(-1);
-end
+    function x = logistic(x)
+        x = (1+exp(-x)).^(-1);
+    end
