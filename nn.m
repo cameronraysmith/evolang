@@ -1,55 +1,67 @@
-function [] = nn(ps,noteIt,plotErr,plotEnd,ergodicErr,noFunc,waitBarSwitch,fmFilterSwitch,useToolbox)
+function [] = nn(ps,noteIt,plotErr,plotEnd,ergodicErr,noComm,waitBarSwitch,fmFilterSwitch,useToolbox,noFunc)
 clear all; close all;
 
 %-------------------------------------
+% 
+% Dependencies:
+% m-files
+%   genKinN.m - necessary to generate training set    
+% 
 % requires MatlabBGL
-% http://dgleich.github.com/matlab-bgl/
-% Run
-% >>help Contents 
-% to view methods defined in MatlabBGL
+%   http://dgleich.github.com/matlab-bgl/
+%   Run
+%   >>help Contents 
+%   to view methods defined in MatlabBGL
 %
-% requires Waterloo file and matrix utilities
-% Direct download: http://goo.gl/NjSKE
-% http://sigtool.sourceforge.net/
-% http://www.mathworks.com/matlabcentral/fileexchange/12250
-% uses: nmatrix
+%   may eventually require Waterloo file and matrix utilities
+%   Direct download: http://goo.gl/NjSKE
+%   http://sigtool.sourceforge.net/
+%   http://www.mathworks.com/matlabcentral/fileexchange/12250
+%   uses: nmatrix
+% 
+% Example usage:
+%   nn(ps,noteIt,plotErr,plotEnd,ergodicErr,noComm,waitBarSwitch,fmFilterSwitch,useToolbox,noFunc)
+%   nn('grid',1000,1,1,1,1,0,1,0,1)
+% 
+% Abbreviations
+%   NYI = not yet implemented
 %-------------------------------------
 
 %% Define switches
 ps = 'grid'; % test | mixing | grid | rand
 
-noteIt     = 1000;
-plotErr    = 1;
-plotEnd    = 1;
-ergodicErr = 1;
-partialIO  = 0;
-noFunc     = 1;
-popTopEvo  = 1;
-plotGph    = 0;
+noteIt     = 1000; % print out timing information every noteIt iterations
+plotErr    = 1;    % save training error
+plotEnd    = 1;    % plot training error when simulation finishes
+ergodicErr = 1;    % use running average rather than iterating through entire population to compute error
+noComm     = 1;    % NYI test training on population of non-interacting individuals
+partialIO  = 0;    % not yet working but may attempt to use Waterloo file and matrix utilities 
+noFunc     = 1;    % avoid all function calls for efficiency
+popTopEvo  = 1;    % population topology evolves as a function of interindividual communication and recommendation
+plotGph    = 0;    % plot population structure graph at end of simulation...probably a bad idea
 
-waitBarSwitch  = 0;
-fmFilterSwitch = 1; 
-useToolbox     = 0;
-
+waitBarSwitch  = 0; % show wait bar during computation, slows down simulation
+fmFilterSwitch = 1; % filter communication through encoding/decoding permutation matrices
+useToolbox     = 0; % use neural network toolbox...not a good idea as it is extremely inefficient
 
 %% Define parameters
-N = 1225;            % population size, must be perfect square
-T = 1000000;         % number of training steps
+N = 1225;           % population size, must be perfect square
+T = 2000000;        % number of training steps
 trS = 50;           % size of training set
 Ninp = 8;           % number of inputs
 Nhid = 10;          % number of hidden layer nodes
 Nout = 1;           % number of output nodes
 Nch = 3;            % number of consecutive 1's in the K-in-N game
-WR = [0 1];    % range of nn weights; the neural.m file uses [0 1] and paper uses [-.5 .5]
+WR = [0 1];         % range of nn weights; the neural.m file uses [0 1] and paper uses [-.5 .5]
 delta = 0.05;       % negative increment for form-meaning mapping
 epsil = 0.01;       % positive increment for form-meaning mapping
-LR = 2.6;           % learning rate
+LR = 2.0;           % learning rate neural.m uses 2.6
 ergErrWindow = 50;  % error window for moving average
-pRandAttach = 0.1;
+pRandAttach = 0.1;  % probability of receiver moving an out-edge to a random node rather than to the recommendation of the sender
 
-datFname = datestr(now,'yyyymmddHHMMSS');
+datFname = datestr(now,'yyyymmddHHMMSS'); % directory name for simulation output files
 system(['mkdir ' datFname]);
-writeIter = 1000;
+writeIter = 1000;   % not yet in use...will indicate the iteration modulus at which data stored in memory will be written to disk
 
 %% Initialize variables
 
@@ -72,7 +84,7 @@ else
 end
 
 % fitness
-fitVal = zeros(N,1);
+fitVal = zeros(N,1);    %initialize fitness vector to be measured
 
 
 %% Generate training data
@@ -359,7 +371,7 @@ end
                     s1Neigh = Gj(Gi==s1);
                     s1Neigh = s1Neigh(s1Neigh~=s1);
                     s1Rec = s1Neigh(find(fitVal(s1Neigh)...
-                        ==max(fitVal(s1Neigh))));
+                        ==min(fitVal(s1Neigh))));
                     if length(s1Rec)>1
                         s1Rec = randsample(s1Rec,1);
                     elseif length(s1Rec)==0
