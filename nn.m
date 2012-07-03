@@ -34,7 +34,7 @@ noteIt     = 1000; % print out timing information every noteIt iterations
 plotErr    = 1;    % save training error
 plotEnd    = 1;    % plot training error when simulation finishes
 ergodicErr = 1;    % use running average rather than iterating through entire population to compute error
-noComm     = 1;    % NYI test training on population of non-interacting individuals
+noComm     = 0;    % NYI test training on population of non-interacting individuals
 partialIO  = 0;    % not yet working but may attempt to use Waterloo file and matrix utilities 
 noFunc     = 1;    % avoid all function calls for efficiency
 popTopEvo  = 1;    % population topology evolves as a function of interindividual communication and recommendation
@@ -45,8 +45,8 @@ fmFilterSwitch = 1; % filter communication through encoding/decoding permutation
 useToolbox     = 0; % use neural network toolbox...not a good idea as it is extremely inefficient
 
 %% Define parameters
-N = 1225;           % population size, must be perfect square
-T = 2000000;        % number of training steps
+N = 100;           % population size, must be perfect square
+T = 20000;        % number of training steps
 trS = 50;           % size of training set
 Ninp = 8;           % number of inputs
 Nhid = 10;          % number of hidden layer nodes
@@ -174,7 +174,8 @@ end
 % Select a training example
     si = randi([1 trS]);
     xi = rind(si);
-      
+
+ 
 % Decompose the receiver into parts representing hl and ol
 if useToolbox
     ol.IW{1} = net{r1}.LW{2,1};
@@ -189,6 +190,7 @@ else
     Rol = netO(:,:,r1);
 end
 
+if ~noComm
 % Compute sender's hidden layer activation levels
 if useToolbox
     hact = +(logistic(net{s1}.IW{1}*x(:,xi)+net{s1}.b{1},0.1)>0.5); % sender hidden layer activation levels
@@ -255,6 +257,8 @@ if fmFilterSwitch
     fm(:,:,r1) = fmMat;
 end
 
+end % noComm
+
 % Update/train the decomposed receiver and sender
 if useToolbox    
     % Train receiver
@@ -280,7 +284,9 @@ else
     dShl = H.*(1-H).*Sol'*dSol; % should H.*(1-H) be used when weights aren't 0-1?
     Sol = Sol + LR*dSol*H';
     Shl = Shl + LR*dShl*x(:,xi)';
+
     
+if ~noComm    
     % Train the receiver
     H = 1./(1+exp(-Rhl*x(:,xi)));
     O = 1./(1+exp(-Rol*hact));    
@@ -295,10 +301,12 @@ else
     Rhl = Rhl + LR*dRhl*x(:,xi)';
     
     % Put updated weights back into population
-    netH(:,:,s1) = Shl;
-    netO(:,:,s1) = Sol;
     netH(:,:,r1) = Rhl;
     netO(:,:,r1) = Rol;
+end % noComm    
+    netH(:,:,s1) = Shl;
+    netO(:,:,s1) = Sol;
+    
 end
 
 % Compute data for plotting
@@ -338,6 +346,7 @@ end
                 
                 fmMat = fm(:,:,rp(4));
                 Stxfr = fmMat>0;
+if ~noComm                
                 RfmMat = fm(:,:,r1);
                 Rtxfr = RfmMat>0;
                 for k=1:(2^Ninp-1)
@@ -355,6 +364,7 @@ end
                     end
                 end
                 E(i,2) = mean([mean(E2t); E(max([i-ergErrWindow 1]):max([i-1 1]),2)]);
+end % noComm                
             end
         if ~plotEnd
             plot(gca,i,E(i,1),'k.','MarkerSize',10);
