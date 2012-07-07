@@ -1,5 +1,5 @@
-function [] = nn(ps,noteIt,plotErr,plotEnd,ergodicErr,noComm,waitBarSwitch,fmFilterSwitch,useToolbox,noFunc)
-clear all; close all;
+function [status] = nn(N,T,ps,noteIt,plotErr,plotEnd,ergodicErr,noComm,partialIO,noFunc,popTopEvo,plotGph,waitBarSwitch,fmFilterSwitch,useToolbox)
+%clear all; close all;
 
 %-------------------------------------
 % 
@@ -20,33 +20,33 @@ clear all; close all;
 %   uses: nmatrix
 % 
 % Example usage:
-%   nn(ps,noteIt,plotErr,plotEnd,ergodicErr,noComm,waitBarSwitch,fmFilterSwitch,useToolbox,noFunc)
-%   nn('grid',1000,1,1,1,1,0,1,0,1)
+%   nn(N,T,ps,noteIt,plotErr,plotEnd,ergodicErr,noComm,partialIO,noFunc,popTopEvo,plotGrph,waitBarSwitch,fmFilterSwitch,useToolbox)
+%   nn(100,2000,'grid',1000,1,1,1,0,0,1,1,0,0,1,0)
 % 
 % Abbreviations
 %   NYI = not yet implemented
 %-------------------------------------
 
 %% Define switches
-ps = 'grid'; % test | mixing | grid | rand
-
-noteIt     = 1000; % print out timing information every noteIt iterations
-plotErr    = 1;    % save training error
-plotEnd    = 1;    % plot training error when simulation finishes
-ergodicErr = 1;    % use running average rather than iterating through entire population to compute error
-noComm     = 0;    % NYI test training on population of non-interacting individuals
-partialIO  = 0;    % not yet working but may attempt to use Waterloo file and matrix utilities 
-noFunc     = 1;    % avoid all function calls for efficiency
-popTopEvo  = 1;    % population topology evolves as a function of interindividual communication and recommendation
-plotGph    = 0;    % plot population structure graph at end of simulation...probably a bad idea
-
-waitBarSwitch  = 0; % show wait bar during computation, slows down simulation
-fmFilterSwitch = 1; % filter communication through encoding/decoding permutation matrices
-useToolbox     = 0; % use neural network toolbox...not a good idea as it is extremely inefficient
-
-%% Define parameters
-N = 100;           % population size, must be perfect square
-T = 20000;        % number of training steps
+% ps = 'grid'; % test | mixing | grid | rand
+% 
+% noteIt     = 1000; % print out timing information every noteIt iterations
+% plotErr    = 1;    % save training error
+% plotEnd    = 1;    % plot training error when simulation finishes
+% ergodicErr = 1;    % use running average rather than iterating through entire population to compute error
+% noComm     = 0;    % NYI test training on population of non-interacting individuals
+% partialIO  = 0;    % not yet working but may attempt to use Waterloo file and matrix utilities 
+% noFunc     = 1;    % avoid all function calls for efficiency
+% popTopEvo  = 1;    % population topology evolves as a function of interindividual communication and recommendation
+% plotGph    = 0;    % plot population structure graph at end of simulation...probably a bad idea
+% 
+% waitBarSwitch  = 0; % show wait bar during computation, slows down simulation
+% fmFilterSwitch = 1; % filter communication through encoding/decoding permutation matrices
+% useToolbox     = 0; % use neural network toolbox...not a good idea as it is extremely inefficient
+% 
+% %% Define parameters
+% N = 100;           % population size, must be perfect square
+% T = 2000;        % number of training steps
 trS = 50;           % size of training set
 Ninp = 8;           % number of inputs
 Nhid = 10;          % number of hidden layer nodes
@@ -62,6 +62,11 @@ pRandAttach = 0.1;  % probability of receiver moving an out-edge to a random nod
 datFname = datestr(now,'yyyymmddHHMMSS'); % directory name for simulation output files
 system(['mkdir ' datFname]);
 writeIter = 1000;   % not yet in use...will indicate the iteration modulus at which data stored in memory will be written to disk
+
+lfid = fopen([datFname '/nn.log'],'a');
+fprintf( lfid,'Run ID: %s\n', datFname );
+save([datFname '/params.mat']);
+
 
 %% Initialize variables
 
@@ -408,6 +413,7 @@ end % noComm
             if mod(i,noteIt)==1
                 iterT = toc(titer);
                 fprintf('current iter: %0.0f time to finish: %0.2f mins at %0.5f sec per it\n',i,iterT*(T-i)/60,iterT);
+                fprintf(lfid,'current iter: %0.0f time to finish: %0.2f mins at %0.5f sec per it\n',i,iterT*(T-i)/60,iterT);
             end
         end
     end
@@ -439,12 +445,16 @@ end % noComm
             sprintf('Finished in %0.2f seconds at %0.5f per iteration',time,time/T));
     else
         fprintf('Finished in %0.2f seconds at %0.5f per iteration\n',time,time/T);
+        fprintf(lfid,'Finished in %0.2f seconds at %0.5f per iteration\n',time,time/T);
     end
     
     if plotErr || plotEnd
         %legend('sender','receiver');
         hold off
     end
+    
+    fclose(lfid);
+    status = 1;
 end
 
     function x = logistic(x)
